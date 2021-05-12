@@ -206,7 +206,7 @@ def add_movie():
             map = {"country": country}  
             graph.run(ctry,map)
 
-            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)<-[r:HAS]-(c) RETURN m,c'
+            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)-[r:PRODUCTED_BY]->(c) RETURN m,c'
             map = {"id":id ,"country" : country}    
             graph.run(relationship,map) 
 
@@ -240,7 +240,7 @@ def add_movie():
                 map = {"actor": actor}
                 graph.run(acts,map)
 
-                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (a)-[r:ACTION_IN]->(m) RETURN m,a'
+                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (m)-[r:PARTICIPATION_OF]->(a) RETURN m,a'
                 map = {"id":id ,"actor" : actor}
                 print(map)    
                 graph.run(relationship,map) 
@@ -263,7 +263,7 @@ def show_all_movie():
 def update_movie(slug):
     if request.method == 'GET': 
        
-        query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie'
+        query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie LIMIT 1'
         movie = graph.run(query,slug = slug)
         check = movie.data()
 
@@ -271,11 +271,42 @@ def update_movie(slug):
             return make_response(jsonify({"message": "Not Found"}), 404)
 
         return jsonify(check)
+
     if request.method == 'PUT':
-        
-        query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie'
-        movie = graph.run(query,slug = slug)
+
+        title = request.form['title']
+        poster = request.form['poster']
+        content = request.form['content']
+        duration = request.form['duration']
+        language = request.form['language']
+
+        query = ('MERGE (m:Movie {slug : $slug})' 
+                ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language ' 
+                ' RETURN m')
+        map = {"slug":slug, "title":title, "poster": poster, "content": content, "duration": duration, "language": language}
+        try :
+            movie = graph.run(query,map)
+            print(movie.data())
+            return make_response(jsonify({"message": "success"}), 200)
+        except  Exception as e:
+            return (str(e))
 
 
-        return 'update'
 # Delete Movie
+@app.route('/api/movie/delete/<slug>',methods=['DELETE'])
+def delete(slug):
+    # query = 'MATCH (m:Movie {slug : $slug}) DETACH DELETE m'
+    query = ('MATCH (mov:Movie) ' 
+            ' WHERE mov.slug = $slug '  
+            ' WITH mov ' 
+            ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) ' 
+            ' WHERE size((allRelatedNodes)--()) = 1 '
+            ' DETACH DELETE mov, allRelatedNodes ')
+    map = {"slug": slug}
+    try:
+        result = graph.run(query,map)
+        print(slug)
+        print(result.data())
+        return make_response(jsonify({"message": "success"}), 200)
+    except Exception as e:
+        return (str(e))
