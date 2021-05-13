@@ -1,31 +1,29 @@
 from flask import jsonify, request, make_response
+from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 from api import app
 from py2neo import NodeMatcher
 from api.config.database import Database
 from api.models.user import User
+from datetime import timedelta
 
 graph = Database().connect()
 
 
-# Get the available details of a given user
+# Get all users
 
-
-@app.route('/api/user/details/', methods=['POST'])
-def getUserData():
-    data = request.get_json()
-    userid = data['userid']
+@app.route('/api/users', methods=['GET'])
+@jwt_required()
+def getAllUser():
     matcher = NodeMatcher(graph)
-    user = matcher.match("User", id={userid}).first()
-
+    user = matcher.match("User").limit(25).all()
     return make_response(jsonify(user), 200)
 
 
-@app.route('/api/user/signup/', methods=['POST'])
+@app.route('/api/user/signup', methods=['POST'])
 def signup():
-    data = request.get_json()
-    email = data['email']
-    name = data['name']
-    password = data['password']
+    email = request.json.get("email", None)
+    name = request.json.get("name", None)
+    password = request.json.get("password", None)
     admin = False
 
     user = User(email)
@@ -38,45 +36,23 @@ def signup():
         return make_response(jsonify(data), 200)
 
 
-@app.route('/api/user/login/', methods=['POST'])
+@app.route('/api/user/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    email = data['email']
-    password = data['password']
+    email = request.json.get("email", None)
+    password = request.json.get("password", None)
 
     user = User(email).verify_password(password)
 
     if not user:
         data = {"message": "Invalid login."}
-        return make_response(jsonify(data), 400)
+        return make_response(jsonify(data), 401)
     else:
-        data = {"message": "Login successfully"}
-        return make_response(jsonify(data), 200)
+        token = create_access_token(identity=email, expires_delta=timedelta(minutes=30))
+        return make_response(jsonify({"token": token}), 200)
 
 
-# @app.route('/api/user/signup/', methods=['POST'])
-# def signup():
-#     data = request.get_json()
-#     email = data['email']
-#     name = data['name']
-#     rawPassword = data['password']
-#     salt = "5gz"
-#     passwordBeforeHash = rawPassword + salt
-#     # password = sha256_crypt.encrypt(passwordBeforeHash)
-#     password = hashlib.sha256(passwordBeforeHash.encode()).hexdigest()
-#     admin = False
-
-#     if email == "" or name == "" or rawPassword == "":
-#         data = {"message": "Data is not valid"}
-#         return make_response(jsonify(data), 400)
-#     else:
-#         cypher = "MATCH (u:User {email: $email}) RETURN u.email AS email"
-#         checkUser = graph.run(cypher, email=email)
-#         if checkUser.data():
-#             data = {"message": "User is already exists"}
-#             return make_response(jsonify(data), 400)
-#         else:
-#             cypher = "CREATE (u:User {email: $email, name: $name, password: $password, admin: $admin}) RETURN u.email " \
-#                      "AS email, u.name AS name, u.admin AS admin "
-#             user = graph.run(cypher, email=email, name=name, password=password, admin=admin)
-#             return make_response(jsonify(user.data()), 200)
+@app.route("/protected", methods=["GET"])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()
+    return jsonify(logged_in_as=current_user), 200
