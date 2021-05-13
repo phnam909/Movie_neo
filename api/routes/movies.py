@@ -9,27 +9,34 @@ import uuid
 app.secret_key = "abc"
 graph = Database().connect()
 
+
+# Get all movies
+
+@app.route('/api/movies', methods=['GET'])
+def getAllMovieData():
+    matcher = NodeMatcher(graph)
+    movie = matcher.match("Movie").limit(25).all()
+    return make_response(jsonify(movie), 200)
+
+
 # Get the available details of a given movie
 
-
-@app.route('/api/movie/details/', methods=['POST'])
+@app.route('/api/movie/details', methods=['POST'])
 def getMovieData():
-    data = request.get_json()
-    title = data['title']
+    title = request.json.get("title", None)
     matcher = NodeMatcher(graph)
     movie = matcher.match("Movie", title={title}).first()
     if not movie:
         return make_response(jsonify({"message": "Movie not found"}), 404)
     else:
-        return make_response(jsonify(movie), 404)
+        return make_response(jsonify(movie), 200)
 
 # Get the genres associated with a given movie
 
 
 @app.route('/api/movie/genres/', methods=['POST'])
 def getMovieGenres():
-    data = request.get_json()
-    title = data['title']
+    title = request.json.get("title", None)
     genres = graph.run(
         'MATCH (genres)-[:IS_GENRE_OF]->(m:Movie {title: $title}) RETURN genres', title=title)
 
@@ -78,7 +85,7 @@ def getMovieAverageRating(title):
 ####### Top #######
 
 # Get top N highest rated movies
-        
+
 
 @app.route('/api/top/movie/top-n/<n>')
 def getMovieTopN(n):
@@ -139,9 +146,8 @@ def getUserAverageRating(userId):
 
 @app.route('/api/rec_engine/content/', methods=['POST'])
 def getRecContent():
-    data = request.get_json()
-    title = data['title']
-    n = data['n']
+    title = request.json.get("title", None)
+    n = request.json.get("n", None)
     avg = graph.run('MATCH (m:Movie)<-[:IS_GENRE_OF]-(g:Genre)-[:IS_GENRE_OF]->(rec:Movie) '
                     'WHERE m.title = $title '
                     'WITH rec, COLLECT(g.name) AS genres, COUNT(*) AS numberOfSharedGenres '
@@ -155,9 +161,8 @@ def getRecContent():
 
 @app.route('/api/rec_engine/collab/', methods=['POST'])
 def getRecCollab():
-    data = request.get_json()
-    userid = data['userid']
-    n = data['n']
+    userid = request.json.get("userid", None)
+    n = request.json.get("n", None)
     rec = graph.run('MATCH (u1:User {id:$userid})-[r:RATED]->(m:Movie) '
                     'WITH u1, avg(r.rating) AS u1_mean '
                     'MATCH (u1)-[r1:RATED]->(m:Movie)<-[r2:RATED]-(u2) '
@@ -176,7 +181,8 @@ def getRecCollab():
 
     return jsonify(rec.data())
 
-# Create 
+
+# Create
 @app.route('/api/movie/add_movie', methods=['GET', 'POST'])
 def add_movie():
     if request.method == 'POST':
@@ -193,57 +199,63 @@ def add_movie():
         slug = request.form['slug']
         timestamp = calendar.timegm(time.gmtime())
         print(timestamp)
-        movie = ' MERGE (u:Movie {id: $id,title: $title,poster: $poster,content: $content, duration: $duration, language: $language,slug: $slug,timestamp: $timestamp})'
-        map={"id" : id,"title" : title, "poster": poster, "content": content, "duration": duration, "language": language,"slug": slug, "timestamp": timestamp}
+        movie = 'MERGE (u:Movie {id: $id,title: $title,poster: $poster,content: $content, duration: $duration, ' \
+                'language: $language,slug: $slug,timestamp: $timestamp}) '
+        map = {"id": id, "title": title, "poster": poster, "content": content,
+               "duration": duration, "language": language, "slug": slug, "timestamp": timestamp}
 
         try:
-            graph.run(movie,map)
+            graph.run(movie, map)
             # return jsonify(result.data())
             print(id)
             print(country)
 
             ctry = 'MERGE (c:Country {country: $country})'
-            map = {"country": country}  
-            graph.run(ctry,map)
+            map = {"country": country}
+            graph.run(ctry, map)
 
-            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)-[r:PRODUCTED_BY]->(c) RETURN m,c'
-            map = {"id":id ,"country" : country}    
-            graph.run(relationship,map) 
+            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)-[' \
+                           'r:PRODUCTED_BY]->(c) RETURN m,c '
+            map = {"id": id, "country": country}
+            graph.run(relationship, map)
 
             # format string before create
             genres = [x.strip() for x in genres.split(',')]
             genres = [genre.capitalize() for genre in genres]
             for gen in genres:
 
-                gnr = 'MERGE (g:Genre {name: $gen})'   
+                gnr = 'MERGE (g:Genre {name: $gen})'
                 map = {"gen": gen}
-                graph.run(gnr,map)
+                graph.run(gnr, map)
 
-                relationship = 'MATCH (m:Movie) , (g:Genre) WHERE m.id = $id and g.name = $gen MERGE (m)<-[r:IS_GENRE_OF]-(g) RETURN m,g'
-                map = {"id":id ,"gen" : gen}
-                print(map)    
-                graph.run(relationship,map) 
-            
+                relationship = 'MATCH (m:Movie) , (g:Genre) WHERE m.id = $id and g.name = $gen MERGE (m)<-[' \
+                               'r:IS_GENRE_OF]-(g) RETURN m,g '
+                map = {"id": id, "gen": gen}
+                print(map)
+                graph.run(relationship, map)
+
             year_query = 'MERGE (y:Year {year: $year})'
             map = {"year": year}
-            graph.run(year_query,map)
+            graph.run(year_query, map)
 
-            relationship = 'MATCH (m:Movie) , (y:Year) WHERE m.id = $id and y.year = $year MERGE (m)-[r:PUBLISHED_IN]->(y) RETURN m,y'
-            map= {"id" : id, "year": year}
-            graph.run(relationship,map) 
-            
+            relationship = 'MATCH (m:Movie) , (y:Year) WHERE m.id = $id and y.year = $year MERGE (m)-[' \
+                           'r:PUBLISHED_IN]->(y) RETURN m,y '
+            map = {"id": id, "year": year}
+            graph.run(relationship, map)
+
             actors = [x.strip() for x in actors.split(',')]
             actors = [actor.title() for actor in actors]
             for actor in actors:
                 print(actor)
-                acts = 'MERGE (g:Actor {name: $actor})'   
+                acts = 'MERGE (g:Actor {name: $actor})'
                 map = {"actor": actor}
-                graph.run(acts,map)
+                graph.run(acts, map)
 
-                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (m)-[r:PARTICIPATION_OF]->(a) RETURN m,a'
-                map = {"id":id ,"actor" : actor}
-                print(map)    
-                graph.run(relationship,map) 
+                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (m)-[' \
+                               'r:PARTICIPATION_OF]->(a) RETURN m,a '
+                map = {"id": id, "actor": actor}
+                print(map)
+                graph.run(relationship, map)
 
             flash('add success')
             return make_response(jsonify({"message": "success"}), 200)
@@ -251,20 +263,24 @@ def add_movie():
             flash('Movie existed')
             return (str(e))
 
-# Show All Movie 
-@app.route('/api/movie/all_movie',methods=['GET']) 
+# Show All Movie
+
+
+@app.route('/api/movie/all_movie', methods=['GET'])
 def show_all_movie():
     query = 'MATCH (m:Movie) RETURN m ORDER BY m.timestamp DESC'
     movie = graph.run(query)
     return jsonify(movie.data())
 
 # Update Movie
-@app.route('/api/movie/update/<slug>',methods=['GET','PUT'])
+
+
+@app.route('/api/movie/update/<slug>', methods=['GET', 'PUT'])
 def update_movie(slug):
-    if request.method == 'GET': 
-       
+    if request.method == 'GET':
+
         query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie LIMIT 1'
-        movie = graph.run(query,slug = slug)
+        movie = graph.run(query, slug=slug)
         check = movie.data()
 
         if not check:
@@ -280,31 +296,33 @@ def update_movie(slug):
         duration = request.form['duration']
         language = request.form['language']
 
-        query = ('MERGE (m:Movie {slug : $slug})' 
-                ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language ' 
-                ' RETURN m')
-        map = {"slug":slug, "title":title, "poster": poster, "content": content, "duration": duration, "language": language}
-        try :
-            movie = graph.run(query,map)
+        query = ('MERGE (m:Movie {slug : $slug})'
+                 'SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language '
+                 '= $language '
+                 ' RETURN m')
+        map = {"slug": slug, "title": title, "poster": poster,
+               "content": content, "duration": duration, "language": language}
+        try:
+            movie = graph.run(query, map)
             print(movie.data())
             return make_response(jsonify({"message": "success"}), 200)
-        except  Exception as e:
+        except Exception as e:
             return (str(e))
 
 
 # Delete Movie
-@app.route('/api/movie/delete/<slug>',methods=['DELETE'])
+@app.route('/api/movie/delete/<slug>', methods=['DELETE'])
 def delete(slug):
     # query = 'MATCH (m:Movie {slug : $slug}) DETACH DELETE m'
-    query = ('MATCH (mov:Movie) ' 
-            ' WHERE mov.slug = $slug '  
-            ' WITH mov ' 
-            ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) ' 
-            ' WHERE size((allRelatedNodes)--()) = 1 '
-            ' DETACH DELETE mov, allRelatedNodes ')
+    query = ('MATCH (mov:Movie) '
+             ' WHERE mov.slug = $slug '
+             ' WITH mov '
+             ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) '
+             ' WHERE size((allRelatedNodes)--()) = 1 '
+             ' DETACH DELETE mov, allRelatedNodes ')
     map = {"slug": slug}
     try:
-        result = graph.run(query,map)
+        result = graph.run(query, map)
         print(slug)
         print(result.data())
         return make_response(jsonify({"message": "success"}), 200)
