@@ -2,10 +2,12 @@ from flask import Flask
 from api.config.database import Database
 from flask_jwt_extended import JWTManager
 from datetime import timedelta
+from flask_cors import CORS
 
 graph = Database().connect()
 
 app = Flask(__name__)
+CORS(app)
 
 # Setup the Flask-JWT-Extended extension
 app.config["JWT_SECRET_KEY"] = "super-secret"  # Change this!

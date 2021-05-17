@@ -9,26 +9,44 @@ from datetime import timedelta
 graph = Database().connect()
 
 
-# Get all users
+# ===================== Admin router  ============================
 
-@app.route('/api/users', methods=['GET'])
+# Get all users admin
+
+@app.route('/api/admin/users', methods=['GET'])
 @jwt_required()
-def getAllUser():
+def getAllUserAdmin():
     matcher = NodeMatcher(graph)
-    user = matcher.match("User").limit(25).all()
-    return make_response(jsonify(user), 200)
+    user = matcher.match("User").all()
+    counter = graph.run("MATCH (u:User) RETURN count(u)").evaluate()
+    resp = make_response(jsonify(user), 200)
+    resp.headers['X-Total-Count'] = counter
+    return resp
 
 
-@app.route('/api/user/signup', methods=['POST'])
+@app.route('/api/admin/users/<uid>', methods=['GET'])
+@jwt_required()
+def getUserData(uid):
+    matcher = NodeMatcher(graph)
+    user = matcher.match("User", id=int(uid)).first()
+    resp = make_response(jsonify(user), 200)
+    return resp
+
+
+# ================================================================
+
+
+@app.route('/api/signup', methods=['POST'])
 def signup():
+    username = request.json.get("username", None)
     email = request.json.get("email", None)
     name = request.json.get("name", None)
     password = request.json.get("password", None)
     admin = False
 
-    user = User(email)
+    user = User(username)
 
-    if not user.register(name, password, admin):
+    if not user.register(name, password, admin, email):
         data = {"message": "User is already exists"}
         return make_response(jsonify(data), 400)
     else:
@@ -36,18 +54,18 @@ def signup():
         return make_response(jsonify(data), 200)
 
 
-@app.route('/api/user/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
-    email = request.json.get("email", None)
+    username = request.json.get("username", None)
     password = request.json.get("password", None)
 
-    user = User(email).verify_password(password)
+    user = User(username).verify_password(password)
 
     if not user:
         data = {"message": "Invalid login."}
         return make_response(jsonify(data), 401)
     else:
-        token = create_access_token(identity=email, expires_delta=timedelta(minutes=30))
+        token = create_access_token(identity=username, expires_delta=timedelta(minutes=30))
         return make_response(jsonify({"token": token}), 200)
 
 
@@ -56,3 +74,10 @@ def login():
 def protected():
     current_user = get_jwt_identity()
     return jsonify(logged_in_as=current_user), 200
+
+
+@app.route('/admin/auth', methods=['GET'])
+@jwt_required()
+def auth():
+    resp = make_response(jsonify({"message": "Authenticated"}), 200)
+    return resp

@@ -1,14 +1,43 @@
 from flask import jsonify, request, make_response, flash
 from api import app
-from py2neo import Graph, Node, NodeMatcher
+from flask_jwt_extended import jwt_required
+from py2neo import NodeMatcher
 from api.config.database import Database
 from werkzeug.utils import secure_filename
 import calendar
 import time
 import uuid
 import os
+
 app.secret_key = "abc"
 graph = Database().connect()
+
+
+# ===================== Admin router  ============================
+
+@app.route('/api/admin/movies', methods=['GET'])
+@jwt_required()
+def getAllMovieAdmin():
+    matcher = NodeMatcher(graph)
+    movie = matcher.match("Movie").all()
+    counter = graph.run("MATCH (m:Movie) RETURN count(m)").evaluate()
+    resp = make_response(jsonify(movie), 200)
+    resp.headers['X-Total-Count'] = int(counter)
+    return resp
+
+
+@app.route('/api/admin/movies/<movie_id>', methods=['GET'])
+@jwt_required()
+def getMovieDataAdmin(movie_id):
+    matcher = NodeMatcher(graph)
+    movie = matcher.match("Movie", id=movie_id).first()
+    if not movie:
+        return make_response(jsonify({"message": "Movie not found"}), 404)
+    else:
+        return make_response(jsonify(movie), 200)
+
+
+# ================================================================
 
 
 # Get all movies
@@ -32,6 +61,7 @@ def getMovieData():
     else:
         return make_response(jsonify(movie), 200)
 
+
 # Get the genres associated with a given movie
 
 
@@ -43,6 +73,7 @@ def getMovieGenres():
 
     return jsonify(list(genres))
 
+
 # Get the submitted ratings of a given movie
 
 
@@ -52,6 +83,7 @@ def getMovieRatings(title):
         'MATCH (u: User)-[r:RATED]->(m:Movie {title: $title}) RETURN u.id AS user, r.rating AS rating', title=title)
 
     return jsonify(ratings.data())
+
 
 # Get the submitted tags of a given movie
 
@@ -72,6 +104,7 @@ def getMoviesByYear(year):
 
     return jsonify(movies.data())
 
+
 # Get the average rating for a given movie
 
 
@@ -82,6 +115,7 @@ def getMovieAverageRating(title):
         'averageRating', title=title)
 
     return jsonify(avg.data())
+
 
 ####### Top #######
 
@@ -96,6 +130,7 @@ def getMovieTopN(n):
 
     return jsonify(mvs.data())
 
+
 # Get top N most rated movies
 
 
@@ -107,6 +142,7 @@ def getMovieNMostRated(n):
 
     return jsonify(mvs.data())
 
+
 ####### User #######
 
 # Get the submitted ratings by a given user
@@ -115,9 +151,11 @@ def getMovieNMostRated(n):
 @app.route('/api/user/ratings/<userId>')
 def getUserRatings(userId):
     ratings = graph.run(
-        'MATCH (u:User {id: $userId})-[r:RATED ]->(movies) RETURN movies.title AS movie, r.rating AS rating', userId=userId)
+        'MATCH (u:User {id: $userId})-[r:RATED ]->(movies) RETURN movies.title AS movie, r.rating AS rating',
+        userId=userId)
 
     return jsonify(ratings.data())
+
 
 # Get the submitted tags by a given user
 
@@ -128,6 +166,7 @@ def getUserTags(userId):
         'MATCH (u:User {id: $userId})-[t:TAGGED ]->(movies) RETURN movies.title AS title, t.tag AS tag', userId=userId)
 
     return jsonify(tags.data())
+
 
 # Get the average rating by a given user
 
@@ -140,7 +179,8 @@ def getUserAverageRating(userId):
 
     return jsonify(avg.data())
 
-# Recommender Enginer
+
+# Recommender Engineer
 
 # Content based
 
@@ -156,6 +196,7 @@ def getRecContent():
                     'ORDER BY numberOfSharedGenres DESC LIMIT toInteger($n);', title=title, n=n)
 
     return jsonify(avg.data())
+
 
 # Collaborative Filtering
 
@@ -182,14 +223,17 @@ def getRecCollab():
 
     return jsonify(rec.data())
 
-# Create 
+
+# Create
 UPLOAD_FOLDER = 'api/static/Uploads'
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 @app.route('/api/movie/add_movie', methods=['GET', 'POST'])
 def add_movie():
@@ -207,65 +251,64 @@ def add_movie():
         slug = request.form['slug']
         timestamp = calendar.timegm(time.gmtime())
 
-       
         # print(image)
         filename = secure_filename(poster.filename)
-        print(filename)    
+        print(filename)
         poster.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-        
-        path = UPLOAD_FOLDER+ '/' + filename
+
+        path = UPLOAD_FOLDER + '/' + filename
         print(path)
         movie = ' MERGE (u:Movie {id: $id,title: $title,poster: $poster,content: $content, duration: $duration, language: $language,slug: $slug,timestamp: $timestamp})'
-        map={"id" : id,"title" : title, "poster": path, "content": content, "duration": duration, "language": language,"slug": slug, "timestamp": timestamp}
+        map = {"id": id, "title": title, "poster": path, "content": content, "duration": duration, "language": language,
+               "slug": slug, "timestamp": timestamp}
 
         try:
-            graph.run(movie,map)
+            graph.run(movie, map)
             # return jsonify(result.data())
             # print(id)
             # print(country)
 
             ctry = 'MERGE (c:Country {country: $country})'
-            map = {"country": country}  
-            graph.run(ctry,map)
+            map = {"country": country}
+            graph.run(ctry, map)
 
             relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)-[r:PRODUCTED_BY]->(c) RETURN m,c'
-            map = {"id":id ,"country" : country}    
-            graph.run(relationship,map) 
+            map = {"id": id, "country": country}
+            graph.run(relationship, map)
 
             # format string before create
             genres = [x.strip() for x in genres.split(',')]
             genres = [genre.capitalize() for genre in genres]
             for gen in genres:
-                
-                gnr = 'MERGE (g:Genre {name: $gen})'   
+                gnr = 'MERGE (g:Genre {name: $gen})'
                 map = {"gen": gen}
-                graph.run(gnr,map)
+                graph.run(gnr, map)
 
                 relationship = 'MATCH (m:Movie) , (g:Genre) WHERE m.id = $id and g.name = $gen MERGE (m)<-[r:IS_GENRE_OF]-(g) RETURN m,g'
-                map = {"id":id ,"gen" : gen}
-                print(map)    
-                graph.run(relationship,map) 
-            
+                map = {"id": id, "gen": gen}
+                print(map)
+                graph.run(relationship, map)
+
             year_query = 'MERGE (y:Year {year: $year})'
             map = {"year": year}
-            graph.run(year_query,map)
+            graph.run(year_query, map)
 
             relationship = 'MATCH (m:Movie) , (y:Year) WHERE m.id = $id and y.year = $year MERGE (m)-[r:PUBLISHED_IN]->(y) RETURN m,y'
-            map= {"id" : id, "year": year}
-            graph.run(relationship,map) 
-            
+            map = {"id": id, "year": year}
+            graph.run(relationship, map)
+
             actors = [x.strip() for x in actors.split(',')]
             actors = [actor.title() for actor in actors]
             for actor in actors:
                 print(actor)
-                acts = 'MERGE (g:Actor {name: $actor})'   
+                acts = 'MERGE (g:Actor {name: $actor})'
                 map = {"actor": actor}
-                graph.run(acts,map)
+                graph.run(acts, map)
 
                 relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (m)-[r:PARTICIPATION_OF]->(a) RETURN m,a'
-                map = {"id":id ,"actor" : actor}
-                print(map)    
-                graph.run(relationship,map) 
+                map = {"id": id, "actor": actor}
+                print(map)
+                graph.run(relationship, map)
 
             flash('add success')
             return make_response(jsonify({"message": "success"}), 200)
@@ -274,20 +317,22 @@ def add_movie():
             print(e)
             return make_response(jsonify({"message": "Movie is Existed"}), 400)
 
-# Show All Movie 
-@app.route('/api/movie/all_movie',methods=['GET']) 
+
+# Show All Movie
+@app.route('/api/movie/all_movie', methods=['GET'])
 def show_all_movie():
     query = 'MATCH (m:Movie) RETURN m ORDER BY m.timestamp DESC'
     movie = graph.run(query)
     return jsonify(movie.data())
 
+
 # Update Movie
-@app.route('/api/movie/update/<slug>',methods=['GET','PUT'])
+@app.route('/api/movie/update/<slug>', methods=['GET', 'PUT'])
 def update_movie(slug):
-    if request.method == 'GET': 
-       
+    if request.method == 'GET':
+
         query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie LIMIT 1'
-        movie = graph.run(query,slug = slug)
+        movie = graph.run(query, slug=slug)
         check = movie.data()
 
         if not check:
@@ -304,17 +349,18 @@ def update_movie(slug):
         language = request.form['language']
 
         filename = secure_filename(poster.filename)
-        print(filename)    
+        print(filename)
         poster.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-        
-        path = UPLOAD_FOLDER+ '/' + filename
 
-        query = ('MERGE (m:Movie {slug : $slug})' 
-                ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language ' 
-                ' RETURN m')
-        map = {"slug":slug, "title":title, "poster": path, "content": content, "duration": duration, "language": language}
-        try :
-            movie = graph.run(query,map)
+        path = UPLOAD_FOLDER + '/' + filename
+
+        query = ('MERGE (m:Movie {slug : $slug})'
+                 ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language '
+                 ' RETURN m')
+        map = {"slug": slug, "title": title, "poster": path, "content": content, "duration": duration,
+               "language": language}
+        try:
+            movie = graph.run(query, map)
             print(movie.data())
             return make_response(jsonify({"message": "success"}), 200)
         except  Exception as e:
@@ -322,21 +368,20 @@ def update_movie(slug):
 
 
 # Delete Movie
-@app.route('/api/movie/delete/<slug>',methods=['DELETE'])
+@app.route('/api/movie/delete/<slug>', methods=['DELETE'])
 def delete(slug):
     # query = 'MATCH (m:Movie {slug : $slug}) DETACH DELETE m'
-    query = ('MATCH (mov:Movie) ' 
-            ' WHERE mov.slug = $slug '  
-            ' WITH mov ' 
-            ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) ' 
-            ' WHERE size((allRelatedNodes)--()) = 1 '
-            ' DETACH DELETE mov, allRelatedNodes ')
+    query = ('MATCH (mov:Movie) '
+             ' WHERE mov.slug = $slug '
+             ' WITH mov '
+             ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) '
+             ' WHERE size((allRelatedNodes)--()) = 1 '
+             ' DETACH DELETE mov, allRelatedNodes ')
     map = {"slug": slug}
     try:
-        result = graph.run(query,map)
+        result = graph.run(query, map)
         print(slug)
         print(result.data())
         return make_response(jsonify({"message": "success"}), 200)
     except Exception as e:
         return (str(e))
-
