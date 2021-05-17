@@ -194,7 +194,7 @@ def allowed_file(filename):
 @app.route('/api/movie/add_movie', methods=['GET', 'POST'])
 def add_movie():
     if request.method == 'POST':
-        id = str(uuid.uuid4())
+        id = uuid.uuid4().fields[1]
         title = request.form['title']
         poster = request.files['poster']
         content = request.form['content']
@@ -207,16 +207,12 @@ def add_movie():
         slug = request.form['slug']
         timestamp = calendar.timegm(time.gmtime())
 
-       
-        # print(image)
-        filename = secure_filename(poster.filename)
-        print(filename)    
+        filename = secure_filename(poster.filename)         
         poster.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-        
         path = UPLOAD_FOLDER+ '/' + filename
-        print(path)
-        movie = ' MERGE (u:Movie {id: $id,title: $title,poster: $poster,content: $content, duration: $duration, language: $language,slug: $slug,timestamp: $timestamp})'
-        map={"id" : id,"title" : title, "poster": path, "content": content, "duration": duration, "language": language,"slug": slug, "timestamp": timestamp}
+
+        movie = ' MERGE (u:Movie {id : $id,title: $title,poster: $poster,content: $content, duration: $duration, language: $language,year: $year,slug: $slug,timestamp: $timestamp})'
+        map={"id": id,"title" : title, "poster": path, "content": content, "duration": duration, "language": language,"year": year,"slug": slug, "timestamp": timestamp}
 
         try:
             graph.run(movie,map)
@@ -228,8 +224,8 @@ def add_movie():
             map = {"country": country}  
             graph.run(ctry,map)
 
-            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.id = $id and c.country = $country MERGE (m)-[r:PRODUCTED_BY]->(c) RETURN m,c'
-            map = {"id":id ,"country" : country}    
+            relationship = 'MATCH (m:Movie) , (c:Country) WHERE m.slug = $slug and c.country = $country MERGE (m)-[r:PRODUCTED_BY]->(c) RETURN m,c'
+            map = {"slug":slug ,"country" : country}    
             graph.run(relationship,map) 
 
             # format string before create
@@ -241,18 +237,18 @@ def add_movie():
                 map = {"gen": gen}
                 graph.run(gnr,map)
 
-                relationship = 'MATCH (m:Movie) , (g:Genre) WHERE m.id = $id and g.name = $gen MERGE (m)<-[r:IS_GENRE_OF]-(g) RETURN m,g'
-                map = {"id":id ,"gen" : gen}
+                relationship = 'MATCH (m:Movie) , (g:Genre) WHERE m.slug = $slug and g.name = $gen MERGE (m)<-[r:IS_GENRE_OF]-(g) RETURN m,g'
+                map = {"slug":slug ,"gen" : gen}
                 print(map)    
                 graph.run(relationship,map) 
             
-            year_query = 'MERGE (y:Year {year: $year})'
-            map = {"year": year}
-            graph.run(year_query,map)
+            # year_query = 'MERGE (y:Year {year: $year})'
+            # map = {"year": year}
+            # graph.run(year_query,map)
 
-            relationship = 'MATCH (m:Movie) , (y:Year) WHERE m.id = $id and y.year = $year MERGE (m)-[r:PUBLISHED_IN]->(y) RETURN m,y'
-            map= {"id" : id, "year": year}
-            graph.run(relationship,map) 
+            # relationship = 'MATCH (m:Movie) , (y:Year) WHERE m.slug = $slug and y.year = $year MERGE (m)-[r:PUBLISHED_IN]->(y) RETURN m,y'
+            # map= {"slug" : slug, "year": year}
+            # graph.run(relationship,map) 
             
             actors = [x.strip() for x in actors.split(',')]
             actors = [actor.title() for actor in actors]
@@ -262,8 +258,8 @@ def add_movie():
                 map = {"actor": actor}
                 graph.run(acts,map)
 
-                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.id = $id and a.name = $actor MERGE (m)-[r:PARTICIPATION_OF]->(a) RETURN m,a'
-                map = {"id":id ,"actor" : actor}
+                relationship = 'MATCH (m:Movie) , (a: Actor) WHERE m.slug = $slug and a.name = $actor MERGE (m)-[r:PARTICIPATION_OF]->(a) RETURN m,a'
+                map = {"slug":slug ,"actor" : actor}
                 print(map)    
                 graph.run(relationship,map) 
 
@@ -277,17 +273,21 @@ def add_movie():
 # Show All Movie 
 @app.route('/api/movie/all_movie',methods=['GET']) 
 def show_all_movie():
-    query = 'MATCH (m:Movie) RETURN m ORDER BY m.timestamp DESC'
+    query = 'MATCH (m:Movie) RETURN m AS Movie ORDER BY m.timestamp DESC'
     movie = graph.run(query)
-    return jsonify(movie.data())
+    mov = movie.data()
+    if mov:
+        return jsonify(mov)
+    else:
+        return make_response(jsonify({"message": "None"}), 200)
 
 # Update Movie
-@app.route('/api/movie/update/<slug>',methods=['GET','PUT'])
-def update_movie(slug):
+@app.route('/api/movie/update/<id>',methods=['GET','PUT'])
+def update_movie(id):
     if request.method == 'GET': 
        
-        query = 'MATCH (m:Movie) WHERE m.slug = $slug RETURN m as Movie LIMIT 1'
-        movie = graph.run(query,slug = slug)
+        query = 'MATCH (m:Movie) WHERE m.id = toInteger($id) RETURN m as Movie LIMIT 1'
+        movie = graph.run(query,id = id)
         check = movie.data()
 
         if not check:
@@ -302,41 +302,53 @@ def update_movie(slug):
         content = request.form['content']
         duration = request.form['duration']
         language = request.form['language']
+        slug = request.form['slug']
 
         filename = secure_filename(poster.filename)
-        print(filename)    
         poster.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
-        
         path = UPLOAD_FOLDER+ '/' + filename
-
-        query = ('MERGE (m:Movie {slug : $slug})' 
-                ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language ' 
-                ' RETURN m')
-        map = {"slug":slug, "title":title, "poster": path, "content": content, "duration": duration, "language": language}
+        
+        query = ('MATCH (m:Movie {id : toInteger($id)})' 
+                ' SET m.title = $title , m.poster = $poster, m.content = $content, m.duration = $duration, m.language = $language ,m.slug = $slug' 
+                ' RETURN m.id')
+        map = {"id":id, "title":title, "poster": path, "content": content, "duration": duration, "language": language, "slug": slug}
         try :
             movie = graph.run(query,map)
-            print(movie.data())
+            # print(movie.data())
             return make_response(jsonify({"message": "success"}), 200)
         except  Exception as e:
             return (str(e))
 
 
 # Delete Movie
-@app.route('/api/movie/delete/<slug>',methods=['DELETE'])
-def delete(slug):
+@app.route('/api/movie/delete/<id>',methods=['DELETE'])
+def delete(id):
     # query = 'MATCH (m:Movie {slug : $slug}) DETACH DELETE m'
     query = ('MATCH (mov:Movie) ' 
-            ' WHERE mov.slug = $slug '  
+            ' WHERE mov.id = toInteger($id) '  
             ' WITH mov ' 
             ' OPTIONAL MATCH (mov)-[r]-(allRelatedNodes) ' 
             ' WHERE size((allRelatedNodes)--()) = 1 '
             ' DETACH DELETE mov, allRelatedNodes ')
-    map = {"slug": slug}
+    map = {"id": id}
     try:
         result = graph.run(query,map)
-        print(slug)
+        print(id)
         print(result.data())
         return make_response(jsonify({"message": "success"}), 200)
     except Exception as e:
         return (str(e))
 
+# Show movie details
+@app.route('/api/movie/<slug>',methods=['GET'])
+def show_movie_detail(slug):
+    query = ('MATCH (m:Movie) '
+            ' WHERE m.slug = $slug '
+            ' RETURN m as Movie '  
+            ' LIMIT 1')
+    movie = graph.run(query,slug = slug)
+    check = movie.data()
+    # check = Object.assign({},movie.data())
+    if not check:
+        return make_response(jsonify({"message": "Not Found"}), 404)
+    return jsonify(check)
