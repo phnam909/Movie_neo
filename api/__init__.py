@@ -22,6 +22,15 @@ jwt = JWTManager(app)
 #
 # create_uniqueness_constraint()
 
+def create_uniqueness_constraint(label, property):
+    query = "CREATE CONSTRAINT IF NOT EXISTS ON (n:{label}) ASSERT n.{property} IS UNIQUE"
+    query = query.format(label=label, property = property)
+    graph.run(query)
+
+create_uniqueness_constraint('Movie','title')
+create_uniqueness_constraint('Genre','name')
+create_uniqueness_constraint('Actor','name')
+
 from api.routes import movies
 from api.routes import genres
 from api.routes import users
