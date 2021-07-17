@@ -12,7 +12,13 @@ CORS(app)
 # Setup the Flask-JWT-Extended extension
 app.config["JWT_SECRET_KEY"] = "super-secret"  # Change this!
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=2)
+app.config['CORS_HEADERS'] = 'Content-Type'
 jwt = JWTManager(app)
+
+app.config['CORS_HEADERS'] = 'Content-Type'
+
+
+cors = CORS(app, resources={r"/foo": {"origins": "http://localhost:port"}})
 
 
 # def create_uniqueness_constraint():
@@ -28,7 +34,7 @@ def create_uniqueness_constraint(label, property):
     graph.run(query)
 
 create_uniqueness_constraint('Movie','title')
-create_uniqueness_constraint('Genre','name')
+# create_uniqueness_constraint('Genre','name')
 create_uniqueness_constraint('Actor','name')
 
 from api.routes import movies
