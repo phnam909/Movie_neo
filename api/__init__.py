@@ -34,9 +34,11 @@ def create_uniqueness_constraint(label, property):
     graph.run(query)
 
 create_uniqueness_constraint('Movie','title')
-# create_uniqueness_constraint('Genre','name')
+create_uniqueness_constraint('Genre','name')
 create_uniqueness_constraint('Actor','name')
 
 from api.routes import movies
 from api.routes import genres
 from api.routes import users
+from api.routes import actors
+from api.routes import countries

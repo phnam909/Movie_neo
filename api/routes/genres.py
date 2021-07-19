@@ -74,10 +74,9 @@ def getAdminGenres():
 @app.route('/api/admin/genres', methods=['POST'])
 @jwt_required()
 def createGenre():
-    id = uuid.uuid4().fields[1]
     name = request.json.get("name", None)
-    query = ('CREATE (g:Genre {id:$genre_id, name:$name})')
-    map = {"genre_id": id, "name": name}
+    query = ('CREATE (g:Genre {name:$name})')
+    map = {"name": name}
     try:
         graph.run(query, map)
         return make_response(jsonify({"message": "success"}), 200)
@@ -85,12 +84,12 @@ def createGenre():
         return (str(e))
 
 
-@app.route('/api/admin/genres/<genre_id>', methods=['DELETE'])
+@app.route('/api/admin/genres/<genre_name>', methods=['DELETE'])
 @jwt_required()
-def deleteGenre(genre_id):
-    query = ('MATCH (g:Genre {id:$genre_id}) DETACH DELETE g')
+def deleteGenre(genre_name):
+    query = ('MATCH (g:Genre {name:$genre_name}) DETACH DELETE g')
     try:
-        graph.run(query, genre_id=int(genre_id))
+        graph.run(query, genre_name=genre_name)
         return make_response(jsonify({"message": "Deleted success"}), 200)
     except Exception as e:
         return (str(e))
