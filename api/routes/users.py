@@ -153,6 +153,19 @@ def change_password():
     else:
         return make_response(jsonify({"message": "Opps! Something wrong"}), 404)
 
+@app.route('/api/change-profile', methods=['POST'])
+@jwt_required()
+def change_profile():
+    username = request.json.get("username", None)
+    name = request.json.get("name", None)
+
+    query = (
+        'MATCH (p:User {username: $username}) SET p.name = $name RETURN p')
+    genre = graph.run(query, username=username, name=name)
+    if genre:
+        return make_response(jsonify({"message": "Ok"}), 200)
+    else:
+        return make_response(jsonify({"message": "Opps! Something wrong"}), 404)
 
 ####### User #######
 
